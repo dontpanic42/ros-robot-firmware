@@ -137,8 +137,8 @@ void ros_output_callback(const motor_pkg::motorcontroller_output & mco) {
 ros::Subscriber<motor_pkg::motorcontroller_output> sub_output(MC_OUTPUT_TOPIC, &ros_output_callback);
 ros::Publisher pub_status(MC_STATUS_TOPIC, &status_msg);
 
-MotorTickCounter<PIN_MOTOR_HALL_1_A, PIN_MOTOR_HALL_2_B> lw_tick_counter;
-MotorTickCounter<PIN_MOTOR_HALL_2_A, PIN_MOTOR_HALL_2_B> rw_tick_counter;
+MotorTickCounter<PIN_MOTOR_HALL_1_A, PIN_MOTOR_HALL_1_A> lw_tick_counter;
+MotorTickCounter<PIN_MOTOR_HALL_1_B, PIN_MOTOR_HALL_1_B> rw_tick_counter;
 
 void setup() {
   // Setup pins
