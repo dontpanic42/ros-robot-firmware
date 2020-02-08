@@ -21,23 +21,21 @@
 #define TIME_BETWEEN_PUBLISH 100
 
 // ROS topic for left wheel speed
-#define LW_SPEED_TOPIC_NAME "lw_speed"
-// ROS topic for right wheel speed
-#define RW_SPEED_TOPIC_NAME "rw_speed"
+#define MC_OUTPUT_TOPIC "mco"
 // ROS topic for left wheel encoder ticks
-#define LW_ENCODER_TICKS_TOPIC_NAME "lwheel_ticks"
-// ROS topic for left wheel encoder ticks
-#define RW_ENCODER_TICKS_TOPIC_NAME "rwheel_ticks"
+#define MC_STATUS_TOPIC "mcs"
 
+#define BIT_SET(a,b) ((a) |= (1ULL<<(b)))
+#define BIT_CLEAR(a,b) ((a) &= ~(1ULL<<(b)))
+#define BIT_FLIP(a,b) ((a) ^= (1ULL<<(b)))
+#define BIT_CHECK(a,b) (!!((a) & (1ULL<<(b))))  
 
 #include <ros.h>
-#include <std_msgs/Int16.h>
-#include <std_msgs/Int32.h>
+#include <motor_pkg/motorcontroller_output.h>
+#include <motor_pkg/motorcontroller_status.h>
 
 ros::NodeHandle  nh;
-
-std_msgs::Int32 lw_encoder_ticks_msg;
-std_msgs::Int32 rw_encoder_ticks_msg;
+motor_pkg::motorcontroller_status status_msg;
 
 // Killswitch
 unsigned long lastSpeedMessage;
@@ -49,44 +47,43 @@ unsigned long lastPublish;
 
 template<uint8_t INPUT_PIN_1, uint8_t INPUT_PIN_2>
 struct MotorTickCounter {
-  bool lastState1, lastState2;
+
+  uint8_t state;
   uint16_t tickCount;
 
   MotorTickCounter()
   : tickCount(0)
+  , state(0)
   {}
 
   void init () {
     pinMode(INPUT_PIN_1, INPUT);
     pinMode(INPUT_PIN_2, INPUT);
-    this->lastState1 = digitalRead(INPUT_PIN_1);
-    this->lastState2 = digitalRead(INPUT_PIN_2);
+    if(digitalRead(INPUT_PIN_1)) BIT_SET(state, 0); else BIT_CLEAR(state, 0);
+    if(digitalRead(INPUT_PIN_2)) BIT_SET(state, 1); else BIT_CLEAR(state, 1);
   }
 
   void update() {
-    int state1 = digitalRead(INPUT_PIN_1);
-    int state2 = digitalRead(INPUT_PIN_2);
+    uint8_t newState = 0;
+    if(digitalRead(INPUT_PIN_1)) BIT_SET(newState, 0); else BIT_CLEAR(newState, 0);
+    if(digitalRead(INPUT_PIN_2)) BIT_SET(newState, 1); else BIT_CLEAR(newState, 1);
 
-    if(this->lastState1 != state1 || this->lastState2 != state2) {
-      this->lastState1 = state1;
-      this->lastState2 = state2;
+    if(state != newState) {
+      state = newState;
       tickCount++;
     }
   }
 
-  int readTicks() {
+  uint16_t readTicks() {
     return this->tickCount;
   }
 };
 
 // Executed when a message is received in the LW_SPEED_TOPIC_NAME topic
-void ros_callback_lwspeed(const std_msgs::Int16 &msg)
+void set_lwspeed(const int16_t & in)
 {
   // Update timing so we now the connection still works
   lastSpeedMessage = millis();
-
-  // Read speed data from message
-  int16_t in = msg.data;
 
   // When the speed did not change, do return. This is required
   // to have the motors running smooth 
@@ -96,13 +93,11 @@ void ros_callback_lwspeed(const std_msgs::Int16 &msg)
   // Check the direction. When value < 0 reverse, otherwise forward
   if(in > 0) {
     // Forward direction
-    in = in > MOTOR_MAX_VALUE ? MOTOR_MAX_VALUE : in;
     analogWrite(PIN_MOTOR_IN_1_A, 0);
-    analogWrite(PIN_MOTOR_IN_2_A, in);
+    analogWrite(PIN_MOTOR_IN_2_A, in > MOTOR_MAX_VALUE ? MOTOR_MAX_VALUE : in);
   } else {
     // Backward direction
-    in = in < -MOTOR_MAX_VALUE ? -MOTOR_MAX_VALUE : in;
-    analogWrite(PIN_MOTOR_IN_1_A, in);
+    analogWrite(PIN_MOTOR_IN_1_A, in < -MOTOR_MAX_VALUE ? -MOTOR_MAX_VALUE : in);
     analogWrite(PIN_MOTOR_IN_2_A, 0);
   } 
 
@@ -111,13 +106,8 @@ void ros_callback_lwspeed(const std_msgs::Int16 &msg)
 }
 
 // Executed when a message is received in the RW_SPEED_TOPIC_NAME topic
-void ros_callback_rwspeed(const std_msgs::Int16 &msg)
+void set_rwspeed(const int16_t & in)
 {
-  // Update timing so we now the connection still works
-  lastSpeedMessage = millis();
-
-  // Read speed data from message
-  int16_t in = msg.data;
 
   // When the speed did not change, do return. This is required
   // to have the motors running smooth 
@@ -127,25 +117,25 @@ void ros_callback_rwspeed(const std_msgs::Int16 &msg)
   // Check the direction. When value < 0 reverse, otherwise forward
   if(in > 0) {
     // Forward direction
-    in = in > MOTOR_MAX_VALUE ? MOTOR_MAX_VALUE : in;
-    analogWrite(PIN_MOTOR_IN_1_B, in);
+    analogWrite(PIN_MOTOR_IN_1_B, in > MOTOR_MAX_VALUE ? MOTOR_MAX_VALUE : in);
     analogWrite(PIN_MOTOR_IN_2_B, 0);
   } else {
     // Backward direction
-    in = in < -MOTOR_MAX_VALUE ? -MOTOR_MAX_VALUE : in;
     analogWrite(PIN_MOTOR_IN_1_B, 0);
-    analogWrite(PIN_MOTOR_IN_2_B, in);
+    analogWrite(PIN_MOTOR_IN_2_B, in < -MOTOR_MAX_VALUE ? -MOTOR_MAX_VALUE : in);
   } 
+}
 
+void ros_output_callback(const motor_pkg::motorcontroller_output & mco) {
+  set_lwspeed(mco.lw_speed);
+  set_rwspeed(mco.rw_speed);
+  
   // Update timing so we now the connection still works
   lastSpeedMessage = millis();
 }
 
-ros::Subscriber<std_msgs::Int16> sub_lw_speed(LW_SPEED_TOPIC_NAME, &ros_callback_lwspeed);
-ros::Subscriber<std_msgs::Int16> sub_rw_speed(RW_SPEED_TOPIC_NAME, &ros_callback_rwspeed);
-
-ros::Publisher lw_encoder_ticks(LW_ENCODER_TICKS_TOPIC_NAME, &lw_encoder_ticks_msg);
-ros::Publisher rw_encoder_ticks(RW_ENCODER_TICKS_TOPIC_NAME, &rw_encoder_ticks_msg);
+ros::Subscriber<motor_pkg::motorcontroller_output> sub_output(MC_OUTPUT_TOPIC, &ros_output_callback);
+ros::Publisher pub_status(MC_STATUS_TOPIC, &status_msg);
 
 MotorTickCounter<PIN_MOTOR_HALL_1_A, PIN_MOTOR_HALL_2_B> lw_tick_counter;
 MotorTickCounter<PIN_MOTOR_HALL_2_A, PIN_MOTOR_HALL_2_B> rw_tick_counter;
@@ -174,14 +164,9 @@ void setup() {
   // Initialize the rosserial node
   nh.initNode();
   // Subscribe to the left wheel speed topic
-  nh.subscribe(sub_lw_speed);
-  // Subscribe to the right wheel speed topic
-  nh.subscribe(sub_rw_speed);
-  
+  nh.subscribe(sub_output);
   // Advertise lw encoder ticks topic 
-  nh.advertise(lw_encoder_ticks);
-  // Advertise rw encoder ticks topic 
-  nh.advertise(rw_encoder_ticks);
+  nh.advertise(pub_status);
 
   // Reset the killswitch
   lastSpeedMessage = lastPublish = millis();
@@ -207,11 +192,10 @@ void loop() {
 
   // Check if it's time to publish our data
   if((currentMillis - lastPublish) > TIME_BETWEEN_PUBLISH) {
-    lw_encoder_ticks_msg.data = lw_tick_counter.readTicks();
-    rw_encoder_ticks_msg.data = rw_tick_counter.readTicks();
-     
-    lw_encoder_ticks.publish(&lw_encoder_ticks_msg);
-    rw_encoder_ticks.publish(&rw_encoder_ticks_msg);
+    status_msg.lw_ticks = lw_tick_counter.readTicks();
+    status_msg.rw_ticks = rw_tick_counter.readTicks();
+    status_msg.stamp = nh.now();
+    pub_status.publish(&status_msg);
 
     lastPublish = currentMillis;
   }
