@@ -47,27 +47,25 @@ int16_t lastRWSpeed = 0;
 // Time of the last publish of messages
 unsigned long lastPublish;
 
+template<uint8_t INPUT_PIN_1, uint8_t INPUT_PIN_2>
 struct MotorTickCounter {
-  uint8_t pin1, pin2; 
   bool lastState1, lastState2;
   uint16_t tickCount;
 
-  MotorTickCounter(int pin1, int pin2)
-  : pin1(pin1)
-  , pin2(pin2)
-  , tickCount(0)
+  MotorTickCounter()
+  : tickCount(0)
   {}
 
   void init () {
-    pinMode(this->pin1, INPUT);
-    pinMode(this->pin2, INPUT);
-    this->lastState1 = digitalRead(this->pin1);
-    this->lastState2 = digitalRead(this->pin2);
+    pinMode(INPUT_PIN_1, INPUT);
+    pinMode(INPUT_PIN_2, INPUT);
+    this->lastState1 = digitalRead(INPUT_PIN_1);
+    this->lastState2 = digitalRead(INPUT_PIN_2);
   }
 
   void update() {
-    int state1 = digitalRead(this->pin1);
-    int state2 = digitalRead(this->pin2);
+    int state1 = digitalRead(INPUT_PIN_1);
+    int state2 = digitalRead(INPUT_PIN_2);
 
     if(this->lastState1 != state1 || this->lastState2 != state2) {
       this->lastState1 = state1;
@@ -149,8 +147,8 @@ ros::Subscriber<std_msgs::Int16> sub_rw_speed(RW_SPEED_TOPIC_NAME, &ros_callback
 ros::Publisher lw_encoder_ticks(LW_ENCODER_TICKS_TOPIC_NAME, &lw_encoder_ticks_msg);
 ros::Publisher rw_encoder_ticks(RW_ENCODER_TICKS_TOPIC_NAME, &rw_encoder_ticks_msg);
 
-MotorTickCounter lw_tick_counter(PIN_MOTOR_HALL_1_A, PIN_MOTOR_HALL_2_B);
-MotorTickCounter rw_tick_counter(PIN_MOTOR_HALL_2_A, PIN_MOTOR_HALL_2_B);
+MotorTickCounter<PIN_MOTOR_HALL_1_A, PIN_MOTOR_HALL_2_B> lw_tick_counter;
+MotorTickCounter<PIN_MOTOR_HALL_2_A, PIN_MOTOR_HALL_2_B> rw_tick_counter;
 
 void setup() {
   // Setup pins
